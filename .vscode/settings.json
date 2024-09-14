@@ -1,0 +1,8 @@
+{
+    "nim.projectMapping": [
+        {
+            "projectFile": "src/main.nim",
+            "fileRegex": ".*\\.nim"
+        }
+    ]
+}
