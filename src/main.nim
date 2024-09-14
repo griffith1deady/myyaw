@@ -12,13 +12,21 @@ proc ui() =
 
   let currentWindow = glfwGetCurrentContext()
   let nativeWindow = getWindowHandle()
+
   var currentWindowWidth, currentWindowHeight: int32
   currentWindow.getWindowSize(addr currentWindowWidth, addr currentWindowHeight)
+
+  var currentWindowXScale, currentWindowYScale: float32
+  currentWindow.getWindowContentScale(addr currentWindowXScale, addr currentWindowYScale)
+
   setupWindowCallback(currentWindow, nativeWindow)
 
   let currentContext = getSharedState()
   currentContext.screenSize.x = float32(currentWindowWidth)
   currentContext.screenSize.y = float32(currentWindowHeight)
+  currentContext.contentScale.x = currentWindowXScale
+  currentContext.contentScale.y = currentWindowYScale
+  currentContext.ultralightContext.viewConfig.initialDeviceScale = (currentContext.contentScale.x + currentContext.contentScale.y) / 2
   currentContext.ultralightContext.view = newUltralightView(currentContext.ultralightContext.renderer, uint32(currentContext.screenSize.x), uint32(currentContext.screenSize.y), currentContext.ultralightContext.viewConfig, currentContext.ultralightContext.session)
   currentContext.ultralightContext.view.loadURL(newUltralightString("file:///index.html"))
 

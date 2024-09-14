@@ -11,7 +11,7 @@ const RootLayout = (props: PropsWithChildren) => {
   const { children } = props
   return (
     <html lang="en" className='dark'>
-      <body>{children}</body>
+      <body style={{ backgroundColor: "rgba(0, 0, 0, 0)" }}>{children}</body>
     </html>
   )
 }

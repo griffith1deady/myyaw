@@ -7,7 +7,13 @@ import { useState } from 'react'
 export default function Home() {
     const [currentAuthenticationType, setAuthenticationType] = useState<AuthenticationType>(AuthenticationType.None)
     return (
-        <Container py={{ base: '16', md: '24' }} alignItems="center" alignContent="center">
+        <Container 
+            py={{ base: '16', md: '24' }} 
+            display="flex" 
+            justifyContent="center" 
+            alignItems="center" 
+            height="100vh"
+        >
             <AuthenticationModal type={currentAuthenticationType} onClose={() => setAuthenticationType(AuthenticationType.None)} />
             <Center>
                 <AuthenticationCard onAuthenticationTypeChange={setAuthenticationType} />

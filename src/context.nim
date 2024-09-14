@@ -6,6 +6,7 @@ type
     screenSize*: Vector2
     cursorPos*: Vector2
     scrollOffset*: Vector2
+    contentScale*: Vector2
     ultralightContext*: tuple[
       session: UltralightSession,
       view: UltralightView,
