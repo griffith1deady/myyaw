@@ -1,6 +1,6 @@
 # myyaw
 
-A simple cheating framework for Nim.
+A simple cheating template for Nim.
 
 ## Features
 
