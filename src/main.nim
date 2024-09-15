@@ -1,4 +1,4 @@
-import raylib, ultralight, nimgl/[opengl], glfw, winim/lean, context, callback
+import raylib, ultralight, glfw, opengl, winim/lean, context, callback
 
 const windowConfiguration = flags(
   WindowUndecorated, WindowTransparent, WindowMaximized, WindowTopmost, WindowHighdpi
@@ -8,6 +8,7 @@ proc ui() =
   setConfigFlags(windowConfiguration)
   initWindow(0, 0, "Raylib example")
 
+  setGLGetProc(glfwGetProcAddress)
   doAssert glInit(), "glInit failed"
 
   let currentWindow = glfwGetCurrentContext()
