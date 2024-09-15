@@ -1,5 +1,4 @@
-when not declared(nimgl) and not declared(context) and not declared(ultralight) and not declared(unicode) and not declared(strformat) and not declared(lean):
-    import nimgl/[opengl, glfw], context, ultralight, std/[unicode, strformat], winim/lean
+import nimgl/[opengl], glfw, context, ultralight, std/[unicode, strformat], winim/lean
 
 template disposable(resource: pointer, body: untyped) =
   try:

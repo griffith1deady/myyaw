@@ -1,4 +1,4 @@
-import raylib, ultralight, std/[strformat, os, unicode], nimgl/[opengl, glfw], winim/lean, context, callback
+import raylib, ultralight, nimgl/[opengl], glfw, winim/lean, context, callback
 
 const windowConfiguration = flags(
   WindowUndecorated, WindowTransparent, WindowMaximized, WindowTopmost, WindowHighdpi
