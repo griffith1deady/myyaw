@@ -3,8 +3,10 @@ from glfw import GLFWWindow
 import ultralight
 
 type
+  VisualConf* = ref object
+    enableVisual*: bool
   Configuration* = ref object
-    disableOverlay*: bool
+    visualConf*: VisualConf
   GlobalState* = object
     screenSize*: Vector2
     cursorPos*: Vector2
@@ -16,7 +18,8 @@ type
       view: UltralightView,
       renderer: UltralightRenderer,
       config: UltralightConfig,
-      viewConfig: UltralightViewConfig
+      viewConfig: UltralightViewConfig,
+      disableOverlay: bool
     ]
     raylibContext*: tuple[
       sizeCallback: proc(window: GLFWWindow, width: int32, height: int32) {.cdecl.},
@@ -29,6 +32,7 @@ type
     configuration*: Configuration
   SharedState* = ptr GlobalState
 
+makeTypeWrapper(VisualConf)
 makeTypeWrapper(Configuration)
 
 var contextInitializationCallback: proc(self: SharedState) {.closure.}

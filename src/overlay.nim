@@ -4,17 +4,6 @@ const windowConfiguration = flags(
   WindowUndecorated, WindowTransparent, WindowResizable, WindowMousePassthrough, WindowTopmost, WindowHighdpi
 )
 
-template jsHide {.pragma.}
-template jsReadOnly {.pragma.}
-
-type 
-  ComplexType = ref object
-    a {.jsHide.}, b {.jsHide.}: string
-    name {.jsReadOnly.}: string
-    allowed: bool
-
-makeTypeWrapper(ComplexType)
-
 proc overlay*() =
   setConfigFlags(windowConfiguration)
   initWindow(0, 0, "Raylib example")
@@ -30,8 +19,15 @@ proc overlay*() =
   currentContext.screenSize.x = float32(currentWindowWidth)
   currentContext.screenSize.y = float32(currentWindowHeight)
   currentContext.ultralightContext.view = newUltralightView(currentContext.ultralightContext.renderer, uint32(currentContext.screenSize.x), uint32(currentContext.screenSize.y), currentContext.ultralightContext.viewConfig, currentContext.ultralightContext.session)
-  currentContext.ultralightContext.view.loadURL(newUltralightString("file:///index.html"))
+  let windowURL = when not defined(release):
+    newUltralightString("http://localhost:3000/")
+  else:
+    newUltralightString("file:///index.html")
+
+  disposable(windowURL):
+    currentContext.ultralightContext.view.loadURL(windowURL)
   currentContext.ultralightContext.view.setDOMReadyCallback(domReadyCallback, nil)
+  currentContext.ultralightContext.view.setAddConsoleMessageCallback(addConsoleMessageCallback, nil)
 
   setTargetFPS(60)
 
@@ -43,10 +39,14 @@ proc overlay*() =
     clearBackground(Blank)
     drawFPS(10, 10)
 
-    let overlayShouldDrawing = shouldOpenOverlay()
-    if overlayShouldDrawing and not previousKeyState:
-      currentContext.showUltralightOverlay = not currentContext.showUltralightOverlay
-    previousKeyState = overlayShouldDrawing
+    block overlayState:
+      let overlayShouldDrawing = shouldOpenOverlay()
+      if overlayShouldDrawing and not previousKeyState:
+        currentContext.showUltralightOverlay = not currentContext.showUltralightOverlay
+      elif currentContext.ultralightContext.disableOverlay:
+        currentContext.showUltralightOverlay = false
+        currentContext.ultralightContext.disableOverlay = false
+      previousKeyState = overlayShouldDrawing
 
     if not currentContext.showUltralightOverlay and not isWindowState(WindowMousePassthrough):
       setWindowState(flags(WindowMousePassthrough))

@@ -517,6 +517,14 @@ proc objectGetArrayBufferByteLength*(context: JavaScriptContextRef; objectArgume
 
 import std/macros, std/genasts, std/times
 
+# Pragmas for JS class annotations
+
+template jsHide* {.pragma.}
+  ## Hide the property from JS
+
+template jsReadOnly* {.pragma.}
+  ## Don't allow JS to set the object's value
+
 type
   ProcParameter* = object
     name*: string
@@ -604,7 +612,7 @@ proc addToWindow*(ctx: JavaScriptContextRef, vals: openArray[(string, JavaScript
   for (name, val) in vals:
     ctx.addToWindow(name, val)
 
-proc addToWindow*(ctx: JavaScriptContextRef, name: string, prc: JavaScriptObjectCallAsFunctionCallback) =
+proc exportWindow*(ctx: JavaScriptContextRef, name: string, prc: JavaScriptObjectCallAsFunctionCallback) =
   ## Adds a function to the javascript context
   let cname = stringCreateWithUTF8CString name
   let jsFun = cast[JavaScriptValueRef](ctx.objectMakeFunctionWithCallback(cname, prc))
@@ -725,7 +733,7 @@ proc toJSValue*[T: ref object](ctx: JavaScriptContextRef, val: T): JavaScriptVal
   ## ref objects sent across can have there values edited from javascript
   GC_ref(val)
   mixin makeJSClass
-  result = cast[JavaScriptValueRef](ctx.makeObject(makeJSClass(T), cast[pointer](val)))
+  result = cast[JavaScriptValueRef](ctx.objectMake(makeJSClass(T), cast[pointer](val)))
 
 proc toJSValue*[T: JavaScriptValueRef | JavaScriptObjectRef](ctx: JavaScriptContextRef, val: T): JavaScriptValueRef {.inline.} = cast[T](val)
 
@@ -787,7 +795,7 @@ proc fromJSValue*[T: object](ctx: JavaScriptContextRef, val: JavaScriptValueRef,
       
 proc fromJSValue*[T: ref object](ctx: JavaScriptContextRef, val: JavaScriptValueRef, kind: typedesc[T], exception: JavaScriptException): T {.makeRaiser.}=
   ctx.expectType(val, exception, Object):
-    let priv = cast[JavaScriptObjectRef](val).getPrivate()
+    let priv = cast[JavaScriptObjectRef](val).objectGetPrivate()
     if priv.isNil:
       ctx.setJSException("Objects private pointer is not set to a ref object", exception)
     result = cast[T](priv)
@@ -945,7 +953,7 @@ macro makeTypeWrapper*(typ: typedesc[ref object], procs: varargs[typed]) =
     
     parameter.getter = getterName
     # Create setter if it is not ready only
-    if PropertyAttributeReadOnly mod parameter.attributes == 0:
+    if (parameter.attributes and PropertyAttributeReadOnly) == 0:
       let 
         setterName = genSym(nskProc, "set_" & $parameter.name)
         paramType = parameter.kind

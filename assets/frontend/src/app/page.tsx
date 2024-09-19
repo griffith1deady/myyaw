@@ -6,6 +6,7 @@ import { IconButton } from '~/parkui/ui/icon-button'
 import { Splitter } from '~/parkui/ui/splitter'
 import { Tabs } from '~/parkui/ui/tabs'
 import { Text } from '~/parkui/ui/text'
+import { WindowIface, Configuration } from '~/types'
 
 export default function Home() {
     return (
@@ -21,7 +22,14 @@ export default function Home() {
                     <Card.Header>
                         <HStack width='full' justifyContent="space-between">
                             <Card.Title>myyaw</Card.Title>
-                            <IconButton aria-label="Close Dialog" variant="ghost" size="sm">
+                            <IconButton 
+                                aria-label="Close Dialog" variant="ghost" size="sm"
+                                onClick={() => {
+                                    const windowCtx = (window as any) as WindowIface
+                                    console.log(windowCtx.configuration)
+                                    console.log(windowCtx.closeOverlay())
+                                }}
+                            >
                                 <XIcon />
                             </IconButton>
                         </HStack>

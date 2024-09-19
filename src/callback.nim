@@ -1,6 +1,6 @@
 import opengl, glfw, context, ultralight, std/[unicode, strformat]
 
-template disposable(resource: pointer, body: untyped) =
+template disposable*(resource: pointer, body: untyped) =
   try:
     body
   finally:
@@ -242,19 +242,22 @@ proc modifierCallback(window: GLFWWindow, codepoint: uint32, mods: int32) {.cdec
       disposable(ultralightCharEvent):
         fire(currentContext.ultralightContext.view, ultralightCharEvent)
 
+proc closeOverlay(context: JavaScriptContextRef, function: JavaScriptObjectRef, thisObject: JavaScriptObjectRef, argumentCount: csize_t, arguments: ptr UncheckedArray[JavaScriptValueRef], exception: ptr JavaScriptValueRef): JavaScriptValueRef {.cdecl.} =
+  let currentContext = getSharedState()
+  currentContext.ultralightContext.disableOverlay = not currentContext.ultralightContext.disableOverlay
+  return valueMakeBoolean(context, currentContext.ultralightContext.disableOverlay)
+
 proc domReadyCallback*(userData: pointer, view: UltralightView, time: culonglong, success: bool, exception: UltralightString) {.cdecl.} =
-  let javascriptContext = view.lockJavaScriptContext()
+  let javaScriptContext = view.lockJavaScriptContext()
 
   let currentContext = getSharedState()
-  javascriptContext.addToWindow("configuration", javascriptContext.objectMake(Configuration.makeJSClass(), cast[pointer](currentContext.configuration)))
-  
-  var disableOverlay = javascriptContext.evalScript("configuration.disableOverlay", bool)
-  echo fmt"disableOverlay: {disableOverlay}"
-  currentContext.configuration.disableOverlay = not currentContext.configuration.disableOverlay
-  disableOverlay = javascriptContext.evalScript("configuration.disableOverlay", bool)
-  echo fmt"disableOverlay: {disableOverlay}"
-  
+  javaScriptContext.addToWindow("configuration", javaScriptContext.objectMake(Configuration.makeJSClass(), cast[pointer](currentContext.configuration)))
+  javaScriptContext.exportWindow("closeOverlay", closeOverlay)
+
   unlockJavaScriptContext(view)
+
+proc addConsoleMessageCallback*(userData: pointer, view: UltralightView, source: UltralightMessageSource, level: UltralightMessageLevel, message: UltralightString, length: uint32, line: uint32, originalMessage: UltralightString) {.cdecl.} =
+  echo fmt"[{level}] {message.data}"
 
 proc preinitialize(self: SharedState) =
   #[Platform loader]#

@@ -1,11 +1,12 @@
-
-export enum AuthenticationType {
-    AlternativeWorld,
-    Internal,
+export type VisualConf = {
+    enableVisual: boolean
 }
 
-export enum AuthenticationStatus {
-    Unknown,
-    Invalid,
-    Success,
+export type Configuration = {
+    visual: VisualConf,
+}
+
+export interface WindowIface extends Window {
+    configuration: Configuration
+    closeOverlay: () => boolean
 }
