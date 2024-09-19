@@ -146,6 +146,9 @@ proc sizeCallback(window: GLFWWindow, width: int32, height: int32) {.cdecl.} =
   if currentContext.ultralightContext.view != nil:
     currentContext.ultralightContext.view.resize(uint32(width), uint32(height))
 
+  if currentContext.raylibContext.sizeCallback != nil:
+    currentContext.raylibContext.sizeCallback(window, width, height)
+
 proc clickCallback(window: GLFWWindow, button: int32, action: int32, mods: int32) {.cdecl.} =
   let ultralightMouseButton = case button:
     of GLFWMouseButton.Button1: MouseButtonLeft
@@ -169,6 +172,9 @@ proc clickCallback(window: GLFWWindow, button: int32, action: int32, mods: int32
     disposable(ultralightMouseEvent):
       fire(currentContext.ultralightContext.view, ultralightMouseEvent)
 
+  if currentContext.raylibContext.clickCallback != nil:
+    currentContext.raylibContext.clickCallback(window, button, action, mods)
+
 proc scrollCallback(window: GLFWWindow, xoffset: float64, yoffset: float64) {.cdecl.} =
   let currentContext = getSharedState()
   currentContext.scrollOffset.x = float32(xoffset)
@@ -178,6 +184,9 @@ proc scrollCallback(window: GLFWWindow, xoffset: float64, yoffset: float64) {.cd
     let ultralightScrollEvent = newUltralightScrollEvent(ScrollEventTypeScrollByPixel, int32(xoffset * 60), int32(yoffset * 60))
     disposable(ultralightScrollEvent):
       fire(currentContext.ultralightContext.view, ultralightScrollEvent)
+  
+  if currentContext.raylibContext.scrollCallback != nil:
+    currentContext.raylibContext.scrollCallback(window, xoffset, yoffset)
   
 proc positionCallback(window: GLFWWindow, x: float64, y: float64) {.cdecl.} =
   let currentMouseButton = if getMouseButton(window, GLFWMouseButton.Button1) == GLFWPress: MouseButtonLeft
@@ -193,6 +202,9 @@ proc positionCallback(window: GLFWWindow, x: float64, y: float64) {.cdecl.} =
     let ultralightMouseEvent = newUltralightMouseEvent(MouseEventTypeMouseMoved, int32(x), int32(y), currentMouseButton)
     disposable(ultralightMouseEvent):
       fire(currentContext.ultralightContext.view, ultralightMouseEvent)
+
+  if currentContext.raylibContext.positionCallback != nil:
+    currentContext.raylibContext.positionCallback(window, x, y)
 
 proc keyCallback(window: GLFWWindow, key: int32, scancode: int32, action: int32, mods: int32) {.cdecl.} =
   let translatedAction = case action:
@@ -217,6 +229,9 @@ proc keyCallback(window: GLFWWindow, key: int32, scancode: int32, action: int32,
         let extraEvent = newUltralightKeyEvent(KeyEventTypeChar, 0, 0, 0, text, text, false, false, false)
         disposable(extraEvent):
           fire(currentContext.ultralightContext.view, extraEvent)
+    
+    if currentContext.raylibContext.keyCallback != nil:
+      currentContext.raylibContext.keyCallback(window, key, scancode, action, mods)
 
 proc modifierCallback(window: GLFWWindow, codepoint: uint32, mods: int32) {.cdecl.} =
   let currentContext = getSharedState()
