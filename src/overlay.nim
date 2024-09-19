@@ -16,6 +16,7 @@ proc overlay*() =
   setupWindowCallback(glfwGetCurrentContext())
 
   let currentContext = getSharedState()
+  currentContext.raylibContext.window = glfwGetCurrentContext()
   currentContext.screenSize.x = float32(currentWindowWidth)
   currentContext.screenSize.y = float32(currentWindowHeight)
   currentContext.ultralightContext.view = newUltralightView(currentContext.ultralightContext.renderer, uint32(currentContext.screenSize.x), uint32(currentContext.screenSize.y), currentContext.ultralightContext.viewConfig, currentContext.ultralightContext.session)
@@ -28,6 +29,12 @@ proc overlay*() =
     currentContext.ultralightContext.view.loadURL(windowURL)
   currentContext.ultralightContext.view.setDOMReadyCallback(domReadyCallback, nil)
   currentContext.ultralightContext.view.setAddConsoleMessageCallback(addConsoleMessageCallback, nil)
+
+  currentContext.cursorCollection.iBeamCursor = glfwCreateStandardCursor(GLFWIBeamCursor)
+  currentContext.cursorCollection.crosshairCursor = glfwCreateStandardCursor(GLFWCrosshairCursor)
+  currentContext.cursorCollection.handCursor = glfwCreateStandardCursor(GLFWHandCursor)
+  currentContext.cursorCollection.hresizeCursor = glfwCreateStandardCursor(GLFWHResizeCursor)
+  currentContext.cursorCollection.vresizeCursor = glfwCreateStandardCursor(GLFWVResizeCursor)
 
   setTargetFPS(60)
 

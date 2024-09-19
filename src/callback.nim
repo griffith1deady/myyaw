@@ -247,6 +247,21 @@ proc closeOverlay(context: JavaScriptContextRef, function: JavaScriptObjectRef, 
   currentContext.ultralightContext.disableOverlay = not currentContext.ultralightContext.disableOverlay
   return valueMakeBoolean(context, currentContext.ultralightContext.disableOverlay)
 
+proc cursorChangeCallback(userData: pointer, view: UltralightView, cursor: UltralightCursor) {.cdecl.} =
+  let currentContext = getSharedState()
+  case cursor:
+    of IBeam:
+      currentContext.raylibContext.window.setCursor(currentContext.cursorCollection.iBeamCursor)
+    of Cross:
+      currentContext.raylibContext.window.setCursor(currentContext.cursorCollection.crosshairCursor)
+    of Hand:
+      currentContext.raylibContext.window.setCursor(currentContext.cursorCollection.handCursor)
+    of EastResize, WestResize, EastWestResize:
+      currentContext.raylibContext.window.setCursor(currentContext.cursorCollection.hresizeCursor)
+    of NorthResize, SouthResize, NorthSouthResize:
+      currentContext.raylibContext.window.setCursor(currentContext.cursorCollection.vresizeCursor)  
+    else: discard
+
 proc domReadyCallback*(userData: pointer, view: UltralightView, time: culonglong, success: bool, exception: UltralightString) {.cdecl.} =
   let javaScriptContext = view.lockJavaScriptContext()
 
