@@ -19,10 +19,10 @@ else:
 {.pragma: webkitImport, cdecl, dynlib: libraryPrefix & "WebCore" & libraryFormat.}
 
 const
-  PropertyAttributeNone* = cint(0)
-  PropertyAttributeReadOnly* = cint(2)
-  PropertyAttributeDontEnum* = cint(4)
-  PropertyAttributeDontDelete* = cint(8)
+  PropertyAttributeNone* = cuint(0)
+  PropertyAttributeReadOnly* = cuint(2)
+  PropertyAttributeDontEnum* = cuint(4)
+  PropertyAttributeDontDelete* = cuint(8)
   ClassAttributeNone* = cint(0)
   ClassAttributeNoAutomaticPrototype* = cint(2)
 
@@ -135,6 +135,7 @@ type
   JavaScriptPropertyNameAccumulatorRef* = ptr OpaqueJavaScriptPropertyNameAccumulatorStruct
   JavaScriptTypedArrayBytesDeallocator* = proc (a0: pointer; a1: pointer): void {.cdecl.}
   JavaScriptValueRef* = ptr OpaqueJavaScriptValueStruct
+  JavaScriptException* = ptr JavaScriptValueRef
   JavaScriptObjectRef* = ptr OpaqueJavaScriptValueStruct
   JavaScriptPropertyAttributes* = cuint
   JavaScriptClassAttributes* = cuint
@@ -180,6 +181,12 @@ type
     convertToType*: JavaScriptObjectConvertToTypeCallback
   JavaScriptClassDefinition* = JavaScriptClassDefinitionStruct
   JavaScriptChar* = wcharT
+  JavaScriptError* = object of CatchableError
+    orig: JavaScriptException # Store the original exception
+  JavaScriptReferenceError* = object of JavaScriptError
+  JavaScriptRangeError* = object of JavaScriptError
+  JavaScriptSyntaxError* = object of JavaScriptError
+  JavaScriptTypeError* = object of JavaScriptError
   wcharT* = cushort
   UltralightChar16* = cushort
   UltralightConfig* = ptr OpaqueConfigStruct
@@ -431,7 +438,7 @@ proc valueToObject*(context: JavaScriptContextRef; value: JavaScriptValueRef; ex
 proc valueProtect*(context: JavaScriptContextRef; value: JavaScriptValueRef): void {.webkitImport, importc: "JSValueProtect".}
 proc valueUnprotect*(context: JavaScriptContextRef; value: JavaScriptValueRef): void {.webkitImport, importc: "JSValueUnprotect".}
 
-var kJavaScriptClassDefinitionEmpty* {.importc: "kJSClassDefinitionEmpty".}: JavaScriptClassDefinition
+var kJavaScriptClassDefinitionEmpty* {.dynlib: libraryPrefix & "WebCore" & libraryFormat, importc: "kJSClassDefinitionEmpty".}: JavaScriptClassDefinition
 
 proc classCreate*(definition: ptr JavaScriptClassDefinition): JavaScriptClassRef {.webkitImport, importc: "JSClassCreate".}
 proc classRetain*(jsClass: JavaScriptClassRef): JavaScriptClassRef {.webkitImport, importc: "JSClassRetain".}
@@ -507,6 +514,554 @@ proc objectGetTypedArrayBuffer*(context: JavaScriptContextRef; objectArgument: J
 proc objectMakeArrayBufferWithBytesNoCopy*(context: JavaScriptContextRef; bytes: pointer; byteLength: uint64; bytesDeallocator: JavaScriptTypedArrayBytesDeallocator; deallocatorContext: pointer; exception: ptr JavaScriptValueRef): JavaScriptObjectRef {.webkitImport, importc: "JSObjectMakeArrayBufferWithBytesNoCopy".}
 proc objectGetArrayBufferBytesPtr*(context: JavaScriptContextRef; objectArgument: JavaScriptObjectRef; exception: ptr JavaScriptValueRef): pointer {.webkitImport, importc: "JSObjectGetArrayBufferBytesPtr".}
 proc objectGetArrayBufferByteLength*(context: JavaScriptContextRef; objectArgument: JavaScriptObjectRef; exception: ptr JavaScriptValueRef): csize_t {.webkitImport, importc: "JSObjectGetArrayBufferByteLength".}
+
+import std/macros, std/genasts, std/times
+
+type
+  ProcParameter* = object
+    name*: string
+    kind*, defaultValue*: NimNode
+
+proc `$`*(param: ProcParameter): string =
+  if param.kind.kind != nnkEmpty:
+    result &= "(name: " & param.name & ", "
+    result &= "kind: " & $param.kind & ", "
+    result &= "default: " & $param.defaultValue.toStrLit() & ")"
+
+proc extractName*(node: NimNode): NimNode =
+  ## Extracts name that might be hidden in a postfix*
+  if node.kind == nnkPostFix:
+    result = node[1]
+  else:
+    result = node
+
+proc parameters*(prc: NimNode): seq[ProcParameter] =
+  ## Returns list of parameters (first one is return type which will only have type set)
+  ## Also performs other nicities such as 
+  ## * unpacking multiple params of the same type
+  ## * expanding using statements
+  ## If the name is an empty string then it is the return type
+  prc.expectKind(RoutineNodes)
+  var index = 0
+  for identDef in prc[3]:
+    if index == 0: # Return type
+      result &= ProcParameter(
+        name: "",
+        kind: identDef
+      )
+      inc index
+    else:
+      var 
+        kind = identDef[^2]
+        defaultValue = identDef[^1]
+      if kind.kind == nnkEmpty:
+        if defaultValue.kind == nnkEmpty:
+          # It is actually a using statement
+          kind = identDef[0].getTypeInst()
+        else:
+          # It has a default value so we can get the type
+          # from that
+          kind = identDef[^1].getType()
+          
+      for name in identDef[0 ..< ^2]:
+        result &= ProcParameter(
+          name: $name,
+          kind: kind,
+          defaultValue: defaultValue
+        )
+        inc index
+
+proc `$`*(str: JavaScriptStringRef): string =
+  ## Converts a JSStringRef_ to a nim string
+  let length = str.stringGetLength - 1
+  var buf = newSeq[char](length)
+
+  let bufLen = str.stringGetUTF8CString(addr buf[0], length) - 1 # -1 to ignore null terminator
+  result = newString(bufLen)
+  for i in 0..<bufLen:
+    result[i] = buf[i]
+
+proc toJSValue*(ctx: JavaScriptContextRef, val: string): JavaScriptValueRef
+proc fromJSValue*[T: string](ctx: JavaScriptContextRef, val: JavaScriptValueRef, kind: typedesc[T]): T
+proc getProperty*[T](ctx: JavaScriptContextRef, obj: JavaScriptObjectRef, propName: string, kind: typedesc[T]): T
+
+proc setJSException*(ctx: JavaScriptContextRef, msg: string, exception: JavaScriptException) =
+  ## Sets the exception pointer so that an exception is raised in the javascript context.
+  ## Meant to be used when you have an exception pointer to set
+  var jsMsg = ctx.toJSValue(msg)
+  let err = ctx.objectMakeError(1, cast[ptr UncheckedArray[JavaScriptValueRef]](addr jsMsg), nil)
+  exception[] = cast[JavaScriptValueRef](err)
+
+proc addToWindow*(ctx: JavaScriptContextRef, name: string, val: JavaScriptValueRef) =
+  ## Adds a JSValueRef_ value to the global window object in the context so it can be 
+  ## accessed from JS as if it was a global variable
+  let name = stringCreateWithUTF8CString name.cstring
+  ctx.objectSetProperty(ctx.contextGetGlobalObject, name, val, 0, nil)
+  stringRelease name
+
+proc addToWindow*(ctx: JavaScriptContextRef, vals: openArray[(string, JavaScriptValueRef)]) =
+  ## Adds a key/value map of values to the window object
+  for (name, val) in vals:
+    ctx.addToWindow(name, val)
+
+proc addToWindow*(ctx: JavaScriptContextRef, name: string, prc: JavaScriptObjectCallAsFunctionCallback) =
+  ## Adds a function to the javascript context
+  let cname = stringCreateWithUTF8CString name
+  let jsFun = cast[JavaScriptValueRef](ctx.objectMakeFunctionWithCallback(cname, prc))
+  ctx.addToWindow(name, jsFun)
+  stringRelease cname
+
+proc throwNim*(ctx: JavaScriptContextRef, exception: JavaScriptValueRef) =
+  ## Throws a Nim exception from a `JSException` that has been returned from a proc
+  assert not exception.isNil, "No exception has occured"
+  # Stop showing off with "clever" code, make this less convoluted
+  let 
+    errMsg = ctx.getProperty(cast[JavaScriptObjectRef](exception), "message", string)
+    errType = ctx.getProperty(cast[JavaScriptObjectRef](exception), "name", string)
+
+  template doRaise(kind: untyped) = raise (ref kind)(msg: errMsg, orig: cast[JavaScriptException](unsafeAddr exception))  
+
+  # Make the error be more refined
+  case errType
+  of "ReferenceError":
+    doRaise(JavaScriptReferenceError)
+  of "RangeError":
+    doRaise(JavaScriptRangeError)
+  of "SyntaxError":
+    doRaise(JavaScriptSyntaxError)
+  of "TypeError":
+    doRaise(JavaScriptTypeError)
+  else:
+    doRaise(JavaScriptError)
+    
+proc getProperty*(ctx: JavaScriptContextRef, obj: JavaScriptObjectRef, propName: string): JavaScriptValueRef =
+  ## See `getProperty <#getProperty%2CJSContextRef%2CJSObjectRef%2CJSStringRef%2Cptr.JSValueRef>`_.
+  var exception: JavaScriptValueRef
+  let jsName = stringCreateWithUTF8CString propName
+  result = ctx.objectGetProperty(obj, jsName, addr exception)
+  if not exception.isNil:
+    ctx.throwNim exception
+    
+  stringRelease jsName
+  
+proc getProperty*[T](ctx: JavaScriptContextRef, obj: JavaScriptObjectRef, propName: string, kind: typedesc[T]): T =
+  ## Runs `getProperty <#getProperty%2CJSContextRef%2CJSObjectRef%2CJSStringRef%2Cptr.JSValueRef>`_ and then converts the property to `T`
+  let jsVal = ctx.getProperty(obj, propName)
+  result = ctx.fromJSValue(jsVal, kind)
+
+macro makeRaiser(prc: untyped) =
+  ## Makes a version of a proc with the exception parameter removed and auto handles exceptions
+  var
+    exceptionIdent = ident"exception"
+    newParams: seq[NimNode]
+    inCall = nnkCall.newTree(prc.name) # Call to function that doesn't handle exception
+  for i, param in prc.params:
+    if i > 0:
+      # If the parameter isn't the exception, then add it to the new procs parameters
+      if not param[0].eqIdent("exception"):
+        newParams &= param
+        inCall &= ident $param[0]
+      else:
+        inCall &= nnkCommand.newTree(ident "unsafeAddr", exceptionIdent)
+    else:
+      # Add return type
+      newParams &= param
+    
+  let body = quote do:
+      var `exceptionIdent`: JavaScriptValueRef
+      result = `inCall`
+      if not `exceptionIdent`.isNil:
+        ctx.throwNim `exceptionIdent`
+        
+  result = newStmtList(
+    prc,
+    newProc(
+      prc[0],
+      newParams,
+      body
+    )  
+  )
+  result[1][2] = prc[2] # Copy generic parameters
+
+template expectType*(ctx: JavaScriptContextRef, val: JavaScriptValueRef, exception: JavaScriptException, kind: JavaScriptType, body: untyped) =
+  ## Only runs body if **val** is of type **kind**.
+  ## If it isn't then it raises a `ValueError` on the javascript side
+  let valType = ctx.valueGetType(val)
+  if valType == kind:
+    body
+  else:
+    ctx.setJSException("ValueError: Expected " & $kind & " but got " & $valType, exception)
+
+proc toJSValue*[T: SomeFloat | SomeInteger](ctx: JavaScriptContextRef, val: T): JavaScriptValueRef {.inline.} = 
+  valueMakeNumber(ctx, val)
+
+proc toJSValue*(ctx: JavaScriptContextRef, val: string): JavaScriptValueRef =
+  let str = stringCreateWithUTF8CString(val)
+  valueMakeString(ctx, str)
+
+proc toJSValue*[T: object](ctx: JavaScriptContextRef, val: T, exception: JavaScriptException, jsClass: JavaScriptClassRef = nil, data: pointer = nil): JavaScriptValueRef {.makeRaiser.} = 
+  ## Converts an object into a JS object
+  ## 
+  ## * **jsClass**: The class to assign to the object, is the default class by default
+  ## * **data**: Private data for the object, can be accessed with getPrivate_ later 
+  let tmp = ctx.makeObject(jsClass, data)
+  for name, value in val.fieldPairs():
+    let key = stringCreateWithUTF8CString(name)
+    # TODO, make toJSValue use this procs exception pointer
+    when compiles(ctx.toJSValue(value, exception)):
+      let jsVal = ctx.toJSValue(value, exception)
+      if exception[].isNil: return
+    else:
+      let jsVal = ctx.toJSValue(value)
+      
+    ctx.setProperty(tmp, key, jsVal, 0, exception)
+    classRelease key
+    if not exception[].isNil:
+      return
+  result = cast[JavaScriptValueRef](tmp)
+
+proc toJSValue*[T: ref object](ctx: JavaScriptContextRef, val: T): JavaScriptValueRef =
+  ## Converts a ref object into a JS value. You must have called makeTypeWrapper_ on your type before calling this.
+  ## ref objects sent across can have there values edited from javascript
+  GC_ref(val)
+  mixin makeJSClass
+  result = cast[JavaScriptValueRef](ctx.makeObject(makeJSClass(T), cast[pointer](val)))
+
+proc toJSValue*[T: JavaScriptValueRef | JavaScriptObjectRef](ctx: JavaScriptContextRef, val: T): JavaScriptValueRef {.inline.} = cast[T](val)
+
+proc toJSValue*(ctx: JavaScriptContextRef, val: bool): JavaScriptValueRef {.inline.} =
+  ## Converts a `bool` into a JSValue
+  valueMakeBoolean(ctx, val)
+
+
+proc toJSValue*[T](ctx: JavaScriptContextRef, val: openArray[T], exception: JavaScriptException): JavaScriptValueRef {.makeRaiser.} =
+  ## Converts items in a sequence into a JS array
+  var items = newSeq[JavaScriptValueRef](val.len)
+  for i, item in val:
+    when compiles(ctx.toJSValue(item, exception)): 
+      items[i] = ctx.toJSValue(item, exception)
+      if not exception[].isNil:
+        return
+    else: 
+      items[i] = ctx.toJSValue(item)
+
+  result = cast[JavaScriptValueRef](ctx.makeArray(val.len.csize_t, addr items[0], exception))
+  
+
+proc toJSValue*(ctx: JavaScriptContextRef, val: DateTime, exception: JavaScriptException): JavaScriptValueRef {.makeRaiser.} =
+  var dateStr = ctx.toJSValue($val)
+  result = cast[JavaScriptValueRef](objectMakeDate(ctx, 1, cast[ptr UncheckedArray[JavaScriptValueRef]](addr dateStr), cast[ptr JavaScriptValueRef](exception)))
+
+proc fromJSValue*(ctx: JavaScriptContextRef, val: JavaScriptValueRef, kind: typedesc[DateTime], exception: JavaScriptException): DateTime {.makeRaiser.} =
+  ctx.expectType(val, exception, Object):
+    let obj = cast[JavaScriptObjectRef](val)
+    let jsName = stringCreateWithUTF8CString "toISOString"
+    let isoFunc = cast[JavaScriptObjectRef](ctx.getProperty(obj, jsName, exception))
+    stringRelease jsName
+    if not exception[].isNil:
+      return
+    # Call the function
+    let jsDateStr = ctx.callAsFunction(isoFunc, obj, 0, nil, exception)
+    if not exception[].isNil:
+      return
+    let str = ctx.fromJSValue(jsDateStr, string, exception)
+    result = str.parse("yyyy-MM-dd'T'hh:mm:ss'.'fff'Z'", tz=utc()).inZone(local())  
+
+proc fromJSValue*[T: SomeInteger](ctx: JavaScriptContextRef, val: JavaScriptValueRef, kind: typedesc[T], exception: JavaScriptException): T {.makeRaiser.} =
+  ctx.expectType(val, exception, Number):
+    result = kind(ctx.toNumber(val, exception))
+    
+proc fromJSValue*[T: object](ctx: JavaScriptContextRef, val: JavaScriptValueRef, kind: typedesc[T], exception: JavaScriptException): T {.makeRaiser.} =
+  ctx.expectType(val, exception, Object):
+    let obj = ctx.toObject(val, exception)
+    if not obj.isNil:
+      for name, value in result.fieldPairs():
+        let cName = stringCreateWithUTF8CString(name)
+        let jsVal = ctx.getProperty(obj, cName, exception)
+        if not exception[].isNil:
+          return
+        stringRelease cName
+        value = ctx.fromJSValue(jsVal, typeof(value), exception)
+        if not exception[].isNil:
+          return
+      
+proc fromJSValue*[T: ref object](ctx: JavaScriptContextRef, val: JavaScriptValueRef, kind: typedesc[T], exception: JavaScriptException): T {.makeRaiser.}=
+  ctx.expectType(val, exception, Object):
+    let priv = cast[JavaScriptObjectRef](val).getPrivate()
+    if priv.isNil:
+      ctx.setJSException("Objects private pointer is not set to a ref object", exception)
+    result = cast[T](priv)
+  
+proc fromJSValue*[T: string](ctx: JavaScriptContextRef, val: JavaScriptValueRef, kind: typedesc[T], exception: JavaScriptException): T {.makeRaiser.} =
+  ctx.expectType(val, exception, String):
+    result = $ctx.valueToStringCopy(val, exception)
+    
+proc fromJSValue*(ctx: JavaScriptContextRef, val: JavaScriptValueRef, kind: typedesc[bool], 
+                  exception: JavaScriptException): bool {.makeRaiser.}=
+  ## Makes a `bool` from a JSValue_
+  ctx.expectType(val, exception, Boolean):
+    result = ctx.valueToBoolean(val)
+
+template fromArrayLikeImpl(length: int) =
+  ## Expects `exception` and `obj` to be declared in calling site
+  for i in 0..<length:
+    let jsVal = ctx.getPropertyAtIndex(obj, i.cuint, exception)
+    if not exception[].isNil: return
+    result[i] = ctx.fromJSValue(jsVal, T, exception)
+    if not exception[].isNil: return
+
+proc fromJSValue*[K: static[int], T](ctx: JavaScriptContextRef, val: JavaScriptValueRef, kind: typedesc[array[K, T]], exception: JavaScriptException): array[K, T] {.makeRaiser.} =
+  ctx.expectType(val, exception, Object):
+    let obj = ctx.toObject(val, exception)
+    if not exception[].isNil: return
+    fromArrayLikeImpl(K)
+
+proc fromJSValue*[T](ctx: JavaScriptContextRef, val: JavaScriptValueRef, kind: typedesc[seq[T]], exception: JavaScriptException): seq[T] {.makeRaiser.} =
+  ctx.expectType(val, exception, Object):
+    let obj = ctx.toObject(val, exception)
+    if not exception[].isNil: return
+    
+    let length = ctx.fromJSValue(ctx.getProperty(obj, "length"), int, exception)
+    if not exception[].isNil: return
+    
+    result = newSeq[T](length)
+    fromArrayLikeImpl(length)
+    
+type
+  ClassParameter = object
+    name, kind: NimNode
+    attributes: JavaScriptPropertyAttributes
+    getter, setter: NimNode
+
+proc makeSignature(params: openArray[(string, string)], returnType = ""): seq[NimNode] =
+  ## Makes a sequence of NimNodes that can be passed to newProc 
+  if returnType != "":
+    result &= ident returnType
+
+  for (name, kind) in params:
+    result &= nnkIdentDefs.newTree(
+      ident name,
+      parseExpr(kind), # Makes handling types like UncheckedArray[T] easier
+      newEmptyNode()
+    )
+
+macro makeTypeWrapper*(typ: typedesc[ref object], procs: varargs[typed]) =
+  ## Makes a wrapper around a ref object so that it can be shared directly between Nim/JS code i.e. changing
+  ## its values on the JS side affects the Nim side.
+  ##
+  ## It is recommended to use this for big objects since this is quicker than converting the entire object
+  # Change interface to allow for more options e.g. make a constructor, add getter procs
+  # TODO: Check if it is actually quicker
+  # TODO: Optimise operations
+  # TODO: Support oop (i.e. object of Something), maybe support this via JSClass inheritance also?
+  let 
+    impl = typ.getImpl()
+    name = $impl[0]
+  var body = impl[2]
+
+  case body[0].kind
+  of nnkSym:
+    body = body[0].getImpl()[2]
+  of nnkObjectTy:
+    body = body[0]
+  else: discard
+
+  var params: seq[ClassParameter]    
+
+  # TODO: Make this for loop into a util proc, I do it often enough
+  # Extract all the types out of the type defintion (Making sure to following if its an alias)
+  # Property attributes are found by seeing what pragmas are attached to the property
+  for identDef in body[2]:
+    let kind = identDef[^2]
+    for param in identDef[0 ..< ^2]:
+      block paramSect:
+        var classParam = ClassParameter(attributes: PropertyAttributeDontDelete, kind: kind, setter: newNilLit())
+        if param.kind == nnkPragmaExpr:
+          classParam.name = param[0].extractName
+          # Add options that relate to certain pragmas
+          for prag in param[1]:
+            if prag.eqIdent("jsHide"):
+              # Ignore the property
+              break paramSect
+            elif prag.eqIdent("jsReadOnly"):
+              classParam.attributes = classParam.attributes or PropertyAttributeReadOnly
+            elif prag.eqIdent("jsDontEnum"):
+              classParam.attributes = classParam.attributes or PropertyAttributeDontEnum
+        else:
+          classParam.name = param.extractName
+        params &= classParam
+
+  let 
+    pragmas = nnkPragma.newTree(ident "cdecl")
+  result = newStmtList()
+  
+  # Forward declare the makeJSClass proc
+  result.add: genAstOpt({kDirtyTemplate}, typ):
+    proc makeJSClass*(obj: typedesc[typ]): JavaScriptClassRef
+
+  # Create getters/setters
+  var staticValues = nnkBracket.newTree()
+  for parameter in params.mitems():
+    # Idents need to be made every loop or I get capture errors
+    # TODO: See if genasts will fix/help this
+    let
+      ctxIdent = ident "ctx"
+      objIdent = ident "obj"
+      exceptionIdent = ident "exception"
+      valueIdent = ident "value"
+      
+      getterSig = makeSignature({
+        $ctxIdent: "JavaScriptContextRef",
+        $objIdent: "JavaScriptObjectRef",
+        "propName": "JavaScriptStringRef",
+        $exceptionIdent: "JavaScriptException"
+      }, "JavaScriptValueRef")
+
+      setterSig = makeSignature({
+        $ctxIdent: "JavaScriptContextRef",
+        $objIdent: "JavaScriptObjectRef",
+        "propName": "JavaScriptStringRef",
+        $valueIdent: "JavaScriptValueRef",
+        $exceptionIdent: "JavaScriptException"
+      }, "bool")
+      
+    let 
+      getterName = genSym(nskProc, "get_" & $parameter.name)
+      paramName = parameter.name
+    # Create getter function
+    let getterBody = quote do:
+      var obje = cast[`typ`](`objIdent`.objectGetPrivate())
+      when compiles(ctx.toJSValue(obje.`paramName`, `exceptionIdent`[])):
+        return ctx.toJSValue(obje.`paramName`, `exceptionIdent`[])
+      else:
+        return ctx.toJSValue(obje.`paramName`)
+        
+    result &= newProc(
+      getterName,
+      getterSig,
+      getterBody,
+      pragmas = pragmas
+    )
+    
+    parameter.getter = getterName
+    # Create setter if it is not ready only
+    if PropertyAttributeReadOnly mod parameter.attributes == 0:
+      let 
+        setterName = genSym(nskProc, "set_" & $parameter.name)
+        paramType = parameter.kind
+        
+      let setterBody = quote do:
+        var obj = cast[`typ`](objectGetPrivate `objIdent`)
+        obj.`paramName` = ctx.fromJSValue(
+                                `valueIdent`, 
+                                typeof(obj.`paramName`),
+                                `exceptionIdent`
+                          )
+        
+        result = true
+
+      result &= newProc(
+        setterName,
+        setterSig,
+        setterBody,
+        pragmas = pragmas
+      )
+      parameter.setter = setterName
+      
+    staticValues &= nnkObjConstr.newTree(
+      ident "JavaScriptStaticValue",
+      newColonExpr(ident "name", newLit $parameter.name),
+      newColonExpr(ident "getProperty", parameter.getter),
+      newColonExpr(ident "setProperty", parameter.setter),
+      newColonExpr(ident "attributes", newLit parameter.attributes)
+    )
+
+    echo repr staticValues
+    
+  if staticValues.len > 0:
+    # Static values need to end with a nil name
+    staticValues &= nnkObjConstr.newTree(
+      ident "JavaScriptStaticValue",
+      newColonExpr(ident "name", newNilLit())
+    )
+
+  # Add all the functions that belong to the object
+  var staticProcs = nnkBracket.newTree()
+  for prc in procs:
+    let impl = prc.getImpl()
+    # if impl
+    let name = $genSym(nskProc, $prc)
+    let params = impl.parameters
+    if not params[1].kind.eqIdent(typ):
+      "First parameter must be the object for object procs".error(prc)
+      
+    staticProcs &= nnkObjConstr.newTree(
+      ident "JavaScriptStaticFunction",
+      newColonExpr(ident "name", newLit $name),
+      newColonExpr(ident "callAsFunction", ident $name),
+      newColonExpr(ident "attributes", newLit(PropertyAttributeReadOnly or PropertyAttributeDontDelete))
+    )
+    result.add quote do:
+      makeProcWrapper(`name`, `prc`, isObjFunc = true)
+      
+  if staticProcs.len > 0:
+    # Static functions need to end with a nil name
+    staticProcs &= nnkObjConstr.newTree(
+      ident "JavaScriptStaticFunction",
+      newColonExpr(ident "name", newNilLit())
+    )
+
+  let
+    hasValues = staticValues.len > 0
+    hasProcs = staticProcs.len > 0
+    
+  # Create final procs
+  # Reason a proc is used is so that later converter procs can easily know if
+  # a class version of an object exists
+  let 
+    finalizerIdent = genSym(nskProc, "finalizer")
+    makeClassIdent = ident "makeJSClass"
+    
+  # Insert is needed since makeJSClass might be needed if any procs return the class
+  result.add: genAstOpt({kDirtyTemplate}, hasValues = staticValues.len > 0, hasProcs = staticProcs.len > 0,
+                     finalizer = genSym(nskProc, "finalizer"), name = name, typ = typ,
+                     staticVals = staticValues, staticPrcs = staticProcs):
+    proc finalizer(obj: JavaScriptObjectRef) {.cdecl.} =
+      # Mark the object for garbage collection
+      let obj = cast[typ](objectGetPrivate obj)
+      GC_unref(obj) # Or should I call `=destroy`?
+
+    proc makeJSClass*(obj: typedesc[`typ`]): JavaScriptClassRef =
+      var class {.global.}: JavaScriptClassRef
+      once:
+        var classDef = kJavaScriptClassDefinitionEmpty
+        # We use when statements since Nim cant infer the array if they are empty
+        when hasValues:
+          let tmpVals = staticVals
+          classDef.staticValues = unsafeAddr tmpVals[0]
+
+        when hasProcs:
+          let tmpFuncs = staticPrcs
+          classDef.staticFunctions = unsafeAddr tmpFuncs[0]
+
+        classDef.className = name
+        classDef.finalize = finalizer
+        class = classCreate(addr classDef)
+        
+      result = class
+
+proc evalScript*(ctx: JavaScriptContextRef, script: string): JavaScriptValueRef = 
+  ## Runs a script in the context and returns the result
+  let scriptStr = stringCreateWithUTF8CString script
+  var exception: JavaScriptValueRef
+  result = ctx.evaluateScript(scriptStr, nil, nil, 1, addr exception)
+  stringRelease scriptStr
+  if not exception.isNil:
+    ctx.throwNim exception
+
+proc evalScript*[T](ctx: JavaScriptContextRef, script: string, retType: typedesc[T]): T = 
+  ## Runs script and convert return value to a Nim type
+  result = ctx.fromJSValue(ctx.evalScript(script), retType) 
 
 proc versionString*(): cstring {.ultralightImport, importc: "ulVersionString".}
 proc versionMajor*(): uint32 {.ultralightImport, importc: "ulVersionMajor".}

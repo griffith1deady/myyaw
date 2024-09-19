@@ -151,15 +151,15 @@ proc sizeCallback(window: GLFWWindow, width: int32, height: int32) {.cdecl.} =
 
 proc clickCallback(window: GLFWWindow, button: int32, action: int32, mods: int32) {.cdecl.} =
   let ultralightMouseButton = case button:
-    of GLFWMouseButton.Button1: MouseButtonLeft
-    of GLFWMouseButton.Button2: MouseButtonRight
-    of GLFWMouseButton.Button3: MouseButtonMiddle
-    else: MouseButtonNone
+    of GLFWMouseButton.Button1: Left
+    of GLFWMouseButton.Button2: Right
+    of GLFWMouseButton.Button3: Middle
+    else: None
 
   let ultralightEventType = case action:
-    of 1: MouseEventTypeMouseDown
-    of 0: MouseEventTypeMouseUp
-    else: MouseEventTypeMouseDown
+    of 1: Down
+    of 0: Up
+    else: Down
 
   var x, y: float64
   getCursorPos(window, addr x, addr y)
@@ -181,7 +181,7 @@ proc scrollCallback(window: GLFWWindow, xoffset: float64, yoffset: float64) {.cd
   currentContext.scrollOffset.y = float32(yoffset)
 
   if currentContext.ultralightContext.view != nil: 
-    let ultralightScrollEvent = newUltralightScrollEvent(ScrollEventTypeScrollByPixel, int32(xoffset * 60), int32(yoffset * 60))
+    let ultralightScrollEvent = newUltralightScrollEvent(ByPixel, int32(xoffset * 60), int32(yoffset * 60))
     disposable(ultralightScrollEvent):
       fire(currentContext.ultralightContext.view, ultralightScrollEvent)
   
@@ -189,17 +189,17 @@ proc scrollCallback(window: GLFWWindow, xoffset: float64, yoffset: float64) {.cd
     currentContext.raylibContext.scrollCallback(window, xoffset, yoffset)
   
 proc positionCallback(window: GLFWWindow, x: float64, y: float64) {.cdecl.} =
-  let currentMouseButton = if getMouseButton(window, GLFWMouseButton.Button1) == GLFWPress: MouseButtonLeft
-    elif getMouseButton(window, GLFWMouseButton.Button2) == GLFWPress: MouseButtonRight
-    elif getMouseButton(window, GLFWMouseButton.Button3) == GLFWPress: MouseButtonMiddle
-    else: MouseButtonNone
+  let currentMouseButton = if getMouseButton(window, GLFWMouseButton.Button1) == GLFWPress: Left
+    elif getMouseButton(window, GLFWMouseButton.Button2) == GLFWPress: Right
+    elif getMouseButton(window, GLFWMouseButton.Button3) == GLFWPress: Middle
+    else: None
 
   let currentContext = getSharedState()
   currentContext.cursorPos.x = float32(x)
   currentContext.cursorPos.y = float32(y)
 
   if currentContext.ultralightContext.view != nil:
-    let ultralightMouseEvent = newUltralightMouseEvent(MouseEventTypeMouseMoved, int32(x), int32(y), currentMouseButton)
+    let ultralightMouseEvent = newUltralightMouseEvent(Moved, int32(x), int32(y), currentMouseButton)
     disposable(ultralightMouseEvent):
       fire(currentContext.ultralightContext.view, ultralightMouseEvent)
 
@@ -208,8 +208,8 @@ proc positionCallback(window: GLFWWindow, x: float64, y: float64) {.cdecl.} =
 
 proc keyCallback(window: GLFWWindow, key: int32, scancode: int32, action: int32, mods: int32) {.cdecl.} =
   let translatedAction = case action:
-    of GLFWPress: KeyEventTypeRawKeyDown
-    of GLFWRelease: KeyEventTypeKeyUp
+    of GLFWPress: RawKeyDown
+    of GLFWRelease: KeyUp
     else: return
 
   let currentContext = getSharedState()
@@ -223,10 +223,10 @@ proc keyCallback(window: GLFWWindow, key: int32, scancode: int32, action: int32,
       disposable(ultralightKeyEvent):
         fire(currentContext.ultralightContext.view, ultralightKeyEvent)
 
-    if translatedAction == KeyEventTypeRawKeyDown and (key == GLFWKey.ENTER or key == GLFWKey.TAB):
+    if translatedAction == RawKeyDown and (key == GLFWKey.ENTER or key == GLFWKey.TAB):
       let text = if key == GLFWKey.ENTER: newUltralightString("\n") else: newUltralightString("\t")
       disposable(text):
-        let extraEvent = newUltralightKeyEvent(KeyEventTypeChar, 0, 0, 0, text, text, false, false, false)
+        let extraEvent = newUltralightKeyEvent(Char, 0, 0, 0, text, text, false, false, false)
         disposable(extraEvent):
           fire(currentContext.ultralightContext.view, extraEvent)
     
@@ -238,9 +238,23 @@ proc modifierCallback(window: GLFWWindow, codepoint: uint32, mods: int32) {.cdec
   if currentContext.ultralightContext.view != nil:
     let ultralightText = newUltralightString(cstring($Rune(codepoint)))
     disposable(ultralightText):
-      let ultralightCharEvent = newUltralightKeyEvent(KeyEventTypeChar, 0, 0, 0, ultralightText, ultralightText, false, false, false)
+      let ultralightCharEvent = newUltralightKeyEvent(Char, 0, 0, 0, ultralightText, ultralightText, false, false, false)
       disposable(ultralightCharEvent):
         fire(currentContext.ultralightContext.view, ultralightCharEvent)
+
+proc domReadyCallback*(userData: pointer, view: UltralightView, time: culonglong, success: bool, exception: UltralightString) {.cdecl.} =
+  let javascriptContext = view.lockJavaScriptContext()
+
+  let currentContext = getSharedState()
+  javascriptContext.addToWindow("configuration", javascriptContext.objectMake(Configuration.makeJSClass(), cast[pointer](currentContext.configuration)))
+  
+  var disableOverlay = javascriptContext.evalScript("configuration.disableOverlay", bool)
+  echo fmt"disableOverlay: {disableOverlay}"
+  currentContext.configuration.disableOverlay = not currentContext.configuration.disableOverlay
+  disableOverlay = javascriptContext.evalScript("configuration.disableOverlay", bool)
+  echo fmt"disableOverlay: {disableOverlay}"
+  
+  unlockJavaScriptContext(view)
 
 proc preinitialize(self: SharedState) =
   #[Platform loader]#
@@ -252,8 +266,8 @@ proc preinitialize(self: SharedState) =
 
   #[Configuration]#
   self.ultralightContext.config = newUltralightConfig()
-  self.ultralightContext.config.faceWinding = FaceWindingCounterClockwise
-  self.ultralightContext.config.fontHinting = FontHintingSmooth
+  self.ultralightContext.config.faceWinding = CounterClockwise
+  self.ultralightContext.config.fontHinting = Smooth
 
   #[View configuration]#
   self.ultralightContext.viewConfig = newUltralightViewConfig()
@@ -273,6 +287,8 @@ proc preinitialize(self: SharedState) =
   let sessionName = newUltralightString("myyaw")
   disposable(sessionName):
     self.ultralightContext.session = newUltralightSession(self.ultralightContext.renderer, false, sessionName)
+
+  self.configuration = new(Configuration)
 
 proc setupWindowCallback*(window: GLFWWindow) =
   doAssert window.setWindowSizeCallback(sizeCallback) != nil, "setWindowSizeCallback failed"

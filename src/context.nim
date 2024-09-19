@@ -3,6 +3,8 @@ from glfw import GLFWWindow
 import ultralight
 
 type
+  Configuration* = ref object
+    disableOverlay*: bool
   GlobalState* = object
     screenSize*: Vector2
     cursorPos*: Vector2
@@ -24,7 +26,10 @@ type
       keyCallback: proc(window: GLFWWindow, key: int32, scancode: int32, action: int32, mods: int32) {.cdecl.},
       charCallback: proc(window: GLFWWindow, codepoint: uint32) {.cdecl.},
     ]
+    configuration*: Configuration
   SharedState* = ptr GlobalState
+
+makeTypeWrapper(Configuration)
 
 var contextInitializationCallback: proc(self: SharedState) {.closure.}
 

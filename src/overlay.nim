@@ -4,6 +4,17 @@ const windowConfiguration = flags(
   WindowUndecorated, WindowTransparent, WindowResizable, WindowMousePassthrough, WindowTopmost, WindowHighdpi
 )
 
+template jsHide {.pragma.}
+template jsReadOnly {.pragma.}
+
+type 
+  ComplexType = ref object
+    a {.jsHide.}, b {.jsHide.}: string
+    name {.jsReadOnly.}: string
+    allowed: bool
+
+makeTypeWrapper(ComplexType)
+
 proc overlay*() =
   setConfigFlags(windowConfiguration)
   initWindow(0, 0, "Raylib example")
@@ -19,7 +30,8 @@ proc overlay*() =
   currentContext.screenSize.x = float32(currentWindowWidth)
   currentContext.screenSize.y = float32(currentWindowHeight)
   currentContext.ultralightContext.view = newUltralightView(currentContext.ultralightContext.renderer, uint32(currentContext.screenSize.x), uint32(currentContext.screenSize.y), currentContext.ultralightContext.viewConfig, currentContext.ultralightContext.session)
-  currentContext.ultralightContext.view.loadURL(newUltralightString("https://modrinth.com/mods?o=40&g=categories:fabric&v=1.8.9"))
+  currentContext.ultralightContext.view.loadURL(newUltralightString("file:///index.html"))
+  currentContext.ultralightContext.view.setDOMReadyCallback(domReadyCallback, nil)
 
   setTargetFPS(60)
 
