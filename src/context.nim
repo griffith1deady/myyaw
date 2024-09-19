@@ -7,6 +7,7 @@ type
     cursorPos*: Vector2
     scrollOffset*: Vector2
     contentScale*: Vector2
+    showUltralightOverlay*: bool
     ultralightContext*: tuple[
       session: UltralightSession,
       view: UltralightView,

@@ -1,4 +1,4 @@
-import nimgl/[opengl], glfw, context, ultralight, std/[unicode, strformat], winim/lean
+import opengl, glfw, context, ultralight, std/[unicode, strformat]
 
 template disposable(resource: pointer, body: untyped) =
   try:
@@ -245,14 +245,11 @@ proc preinitialize(self: SharedState) =
   self.ultralightContext.viewConfig.fontFamilyStandard = newUltralightString("Outfit")
 
   self.ultralightContext.renderer = newUltralightRenderer(self.ultralightContext.config)
-  let sessionName = newUltralightString("bloodify")
+  let sessionName = newUltralightString("myyaw")
   disposable(sessionName):
     self.ultralightContext.session = newUltralightSession(self.ultralightContext.renderer, false, sessionName)
 
-proc setupWindowCallback*(window: GLFWWindow, handle: pointer) =
-  let windowHandle = cast[HWND](handle)
-  SetWindowLong(windowHandle, GWL_EXSTYLE, WS_EX_LAYERED or WS_EX_TRANSPARENT or WS_EX_TOOLWINDOW)
-
+proc setupWindowCallback*(window: GLFWWindow) =
   doAssert window.setWindowSizeCallback(sizeCallback) != nil, "setWindowSizeCallback failed"
   doAssert window.setCursorPosCallback(positionCallback) != nil, "setCursorPosCallback failed"
   doAssert window.setMouseButtonCallback(clickCallback) != nil, "setMouseButtonCallback failed"
@@ -264,12 +261,39 @@ proc setupWindowCallback*(window: GLFWWindow, handle: pointer) =
 
 var prevKeyDownState: bool = false
 
-proc shouldOpenOverlay*(): bool =
-  let currKeyState = GetAsyncKeyState(VK_INSERT) == -32768
+proc shouldOpenOverlay*(): bool
 
-  if currKeyState and not prevKeyDownState:
-    result = true
-  else:
-    result = false
+when defined(linux):
+  import x11/[x, xlib, xtst]
 
-  prevKeyDownState = currKeyState
+  var
+    display = XOpenDisplay(nil)
+    root = XRootWindow(display, 0)
+
+  proc keyPressed*(key: int): bool =
+    var keys: array[0..31, char]
+    discard XQueryKeymap(display, keys)
+    let keycode = XKeysymToKeycode(display, key.culong)
+    (ord(keys[keycode.int div 8]) and (1 shl (keycode.int mod 8))) != 0
+
+  proc shouldOpenOverlay*(): bool =
+    let currKeyState = keyPressed(0xFF63)
+    if currKeyState and not prevKeyDownState:
+      result = true
+    else:
+      result = false
+
+    prevKeyDownState = currKeyState
+
+elif defined(windows):
+  import winim/lean
+  
+  proc shouldOpenOverlay*(): bool =
+    let currKeyState = GetAsyncKeyState(VK_INSERT) == -32768
+
+    if currKeyState and not prevKeyDownState:
+      result = true
+    else:
+      result = false
+
+    prevKeyDownState = currKeyState

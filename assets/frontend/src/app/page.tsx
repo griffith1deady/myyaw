@@ -4,6 +4,7 @@ import { Container, Center, VStack, HStack } from 'styled-system/jsx'
 import { Card } from '~/parkui/ui/card'
 import { IconButton } from '~/parkui/ui/icon-button'
 import { Splitter } from '~/parkui/ui/splitter'
+import { Tabs } from '~/parkui/ui/tabs'
 import { Text } from '~/parkui/ui/text'
 
 export default function Home() {
@@ -26,25 +27,19 @@ export default function Home() {
                         </HStack>
                     </Card.Header>
                     <Card.Body>
-                    <Splitter.Root
-                        size={[
-                            { id: 'sidebar', size: 30 },
-                            { id: 'rootView', size: 70 },
-                        ]}
-                    >
-                        <Splitter.Panel id="sidebar">
-                            <Card.Root width="full" height="full">
-                                <Card.Header>
-                                    <Card.Title>Navigation</Card.Title>
-                                </Card.Header>
-                                <Card.Body>
-                                    <Text>A</Text>
-                                </Card.Body>
-                            </Card.Root>
-                        </Splitter.Panel>
-                        <Splitter.ResizeTrigger id="sidebar:rootView" />
-                        <Splitter.Panel id="rootView">B</Splitter.Panel>
-                    </Splitter.Root>
+                    <Tabs.Root defaultValue="visual" variant="enclosed">
+                        <Tabs.List>
+                            <Tabs.Trigger value={"visual"}>
+                                {"Visual"}
+                            </Tabs.Trigger>
+                            <Tabs.Trigger value={"battle"}>
+                                {"Battle"}
+                            </Tabs.Trigger>
+                            <Tabs.Indicator />
+                        </Tabs.List>
+                        <Tabs.Content value="visual">Know React? Check out Solid!</Tabs.Content>
+                        <Tabs.Content value="battle">Know React? Suck dick!</Tabs.Content>
+                    </Tabs.Root>
                     </Card.Body>
                 </Card.Root>
             </Center>

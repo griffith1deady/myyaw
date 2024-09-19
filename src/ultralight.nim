@@ -1,7 +1,22 @@
-{.pragma: appCoreImport, cdecl, dynlib: "AppCore.dll".}
-{.pragma: ultralightImport, cdecl, dynlib: "Ultralight.dll".}
-{.pragma: ultralightCoreImport, cdecl, dynlib: "UltralightCore.dll".}
-{.pragma: webkitImport, cdecl, dynlib: "WebCore.dll".}
+
+const libraryFormat = when defined(windows):
+    ".dll"
+elif defined(linux):
+    ".so"
+else:
+    ".dylib"
+
+const libraryPrefix = when defined(windows):
+    ""
+elif defined(linux):
+    "lib"
+else:
+    "lib"
+
+{.pragma: appCoreImport, cdecl, dynlib: libraryPrefix & "AppCore" & libraryFormat.}
+{.pragma: ultralightImport, cdecl, dynlib: libraryPrefix & "Ultralight" & libraryFormat.}
+{.pragma: ultralightCoreImport, cdecl, dynlib: libraryPrefix & "UltralightCore" & libraryFormat.}
+{.pragma: webkitImport, cdecl, dynlib: libraryPrefix & "WebCore" & libraryFormat.}
 
 const
   PropertyAttributeNone* = cint(0)

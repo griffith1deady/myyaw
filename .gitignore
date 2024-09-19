@@ -4,6 +4,9 @@ htmldocs/
 
 *.exe
 *.dll
+*.so
+main
+external
 xmake/
 .xmake/
 .vscode/compile_commands.json
