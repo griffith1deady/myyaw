@@ -228,22 +228,32 @@ proc modifierCallback(window: GLFWWindow, codepoint: uint32, mods: int32) {.cdec
         fire(currentContext.ultralightContext.view, ultralightCharEvent)
 
 proc preinitialize(self: SharedState) =
+  #[Platform loader]#
   enablePlatformFontLoader()
   enablePlatformFileSystem(newUltralightString("assets"))
   `platformLogger=`(UltralightLogger(logMessage: proc(level: UltralightLogLevel, message: UltralightString) {.cdecl.} =
     echo fmt"[{level}] {message.data}"
   ))
 
+  #[Configuration]#
   self.ultralightContext.config = newUltralightConfig()
   self.ultralightContext.config.faceWinding = FaceWindingCounterClockwise
   self.ultralightContext.config.fontHinting = FontHintingSmooth
 
+  #[View configuration]#
   self.ultralightContext.viewConfig = newUltralightViewConfig()
-  self.ultralightContext.viewConfig.userAgent = newUltralightString("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36")
+  let userAgent = newUltralightString("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36")
+  disposable(userAgent):
+    self.ultralightContext.viewConfig.userAgent = userAgent
+
   self.ultralightContext.viewConfig.accelerated = false 
   self.ultralightContext.viewConfig.transparent = true
-  self.ultralightContext.viewConfig.fontFamilyStandard = newUltralightString("Outfit")
 
+  let fontFamilyStandart = newUltralightString("Outfit")
+  disposable(fontFamilyStandart):
+    self.ultralightContext.viewConfig.fontFamilyStandard = fontFamilyStandart
+
+  #[Session and renderer creation]#
   self.ultralightContext.renderer = newUltralightRenderer(self.ultralightContext.config)
   let sessionName = newUltralightString("myyaw")
   disposable(sessionName):
