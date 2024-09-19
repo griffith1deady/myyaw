@@ -247,7 +247,7 @@ proc closeOverlay(context: JavaScriptContextRef, function: JavaScriptObjectRef, 
   currentContext.ultralightContext.disableOverlay = not currentContext.ultralightContext.disableOverlay
   return valueMakeBoolean(context, currentContext.ultralightContext.disableOverlay)
 
-proc cursorChangeCallback(userData: pointer, view: UltralightView, cursor: UltralightCursor) {.cdecl.} =
+proc cursorChangeCallback*(userData: pointer, view: UltralightView, cursor: UltralightCursor) {.cdecl.} =
   let currentContext = getSharedState()
   case cursor:
     of IBeam:

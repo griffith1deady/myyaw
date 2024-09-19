@@ -29,6 +29,7 @@ proc overlay*() =
     currentContext.ultralightContext.view.loadURL(windowURL)
   currentContext.ultralightContext.view.setDOMReadyCallback(domReadyCallback, nil)
   currentContext.ultralightContext.view.setAddConsoleMessageCallback(addConsoleMessageCallback, nil)
+  currentContext.ultralightContext.view.setChangeCursorCallback(cursorChangeCallback, nil)
 
   currentContext.cursorCollection.iBeamCursor = glfwCreateStandardCursor(GLFWIBeamCursor)
   currentContext.cursorCollection.crosshairCursor = glfwCreateStandardCursor(GLFWCrosshairCursor)
